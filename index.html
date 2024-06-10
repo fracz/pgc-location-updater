@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Project-GC FTF location updater</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.0.0/css/bulma.min.css">
+    <link rel="stylesheet" href="https://npmcdn.com/leaflet@1.0.0-rc.2/dist/leaflet.css"/>
+    <script src="https://npmcdn.com/leaflet@1.0.0-rc.2/dist/leaflet.js"></script>
+    <style>
+        #mapDiv {
+            height: 300px;
+            margin-bottom: 1em;
+        }
+    </style>
+</head>
+<body>
+<section class="section">
+    <div class="container">
+        <h1 class="title">Project-GC new cache notifier dynamic location updater</h1>
+        <p class="subtitle">Update the dynamic center of Project-GC new cache notifiers as you go.</p>
+        <div class="content">
+            <ol>
+                <li>Create a new cache notifier on <a
+                        href="https://project-gc.com/User/NewCacheNotifiers">Project-GC</a> and enable the <em>Dynamic
+                    center</em> option.
+                </li>
+                <li>Configure the updater using the form below. The data will be remembered on your device only. No
+                    information is being sent to this app server.
+                </li>
+                <li>Click <em>Update location</em> whenever you want to change the center of notification circle.</li>
+                <li>Good luck with being First To Find while you travel!</li>
+            </ol>
+        </div>
+        <form onsubmit="return handleSubmit(event)">
+            <div class="field">
+                <label class="label">Username ID</label>
+                <div class="control">
+                    <input class="input" type="text" placeholder="e.g. 1234567" value="" id="form-uid">
+                </div>
+                <p class="help">Grab this value from the <a href="https://project-gc.com/User/Settings">Project-GC
+                    settings page</a>.</p>
+            </div>
+
+            <div class="field">
+                <label class="label">Project-GC Access token</label>
+                <div class="control">
+                    <input class="input" type="password" placeholder="e.g. xJd37Dj2" value="" id="form-token">
+                </div>
+                <p class="help">Grab this value from the <a href="https://project-gc.com/User/Settings">Project-GC
+                    settings page</a>. It will be used and remembered on your device ONLY.</p>
+            </div>
+
+            <div class="field">
+                <label class="label">Notifier ID</label>
+                <div class="control">
+                    <input class="input" type="text" placeholder="e.g. 1234" id="form-nid">
+                </div>
+                <p class="help">Grab this value from the <a href="https://project-gc.com/User/NewCacheNotifiers">Project-GC
+                    New cache notifiers page</a>. You can see it in the <em>ID</em> field when you edit the notifier.
+                </p>
+            </div>
+
+            <div id="mapDiv"></div>
+            <div class="has-text-centered is-size-5">
+                <div id="coords-preview"></div>
+                <button type="button" onclick="getLocation()" class="button mt-3 is-small" id="get-my-location-button">
+                    Get my location
+                </button>
+            </div>
+            <div class="is-flex">
+                <div class="is-flex-grow-1">
+                    <button type="button" onclick="clearForm()" class="button">
+                        Clear form
+                    </button>
+                </div>
+                <div>
+                    <button type="submit" class="button is-primary">
+                        Update notifier
+                    </button>
+                </div>
+            </div>
+        </form>
+        <div class="has-text-centered mt-3">
+            <iframe id="target-frame" style="height:100px;"></iframe>
+        </div>
+    </div>
+</section>
+
+<script>
+    let accuracy = 1, timestamp = new Date().getTime();
+    const coords = [+localStorage.getItem('lat') || 50, +localStorage.getItem('lng') || 20];
+    let marker;
+    const map = L.map('mapDiv', {doubleClickZoom: false}).setView(coords, 11);
+
+    function getLocation() {
+        if (navigator.geolocation) {
+            document.getElementById('get-my-location-button').classList.add('is-loading');
+            navigator.geolocation.getCurrentPosition((position) => {
+                coords[0] = position.coords.latitude;
+                coords[1] = position.coords.longitude;
+                accuracy = position.coords.accuracy;
+                timestamp = position.timestamp;
+                displayCoords();
+                map.setView(coords, 11);
+                document.getElementById('get-my-location-button').classList.remove('is-loading');
+            });
+        } else {
+            alert('Can get location.');
+        }
+    }
+
+    const zeroPad = (num, places) => String(num).padStart(places, '0');
+
+    function formatCoord(coord, lat = true) {
+        const dir = lat ? (coord.minus ? 'S' : 'N') : (coord.minus ? 'W' : 'E');
+        return `${dir} ${zeroPad(coord.deg, lat ? 2 : 3)}° ${zeroPad(coord.min, 2)}.${zeroPad(Math.round(coord.minDec), 3)}'`;
+    }
+
+    function coordsDecToDdm(coord) {
+        const minus = coord < 0;
+        coord = Math.abs(coord);
+        return {
+            minus,
+            deg: Math.floor(coord),
+            min: Math.abs(Math.floor((coord % 1) * 60)),
+            minDec: Math.abs(Math.round((((coord % 1) * 60) % 1) * 1000)),
+        };
+    }
+
+    function formatCoords(coords) {
+        const lat = this.coordsDecToDdm(coords.latitude);
+        const lng = this.coordsDecToDdm(coords.longitude);
+        return `${this.formatCoord(lat)} ${this.formatCoord(lng, false)}`;
+    }
+
+
+    function displayCoords() {
+        document.getElementById('coords-preview').innerText = formatCoords({latitude: coords[0], longitude: coords[1]});
+        if (marker) {
+            marker.remove();
+        }
+        marker = L.marker(coords).addTo(map);
+        localStorage.setItem('lat', coords[0]);
+        localStorage.setItem('lng', coords[1]);
+    }
+
+    function clearForm() {
+        if (confirm('Your remembered data will be erased from your device. Continue?')) {
+            localStorage.clear();
+            window.location.reload();
+        }
+    }
+
+    function handleSubmit(event) {
+        event.preventDefault();
+        const uid = document.getElementById('form-uid').value;
+        const token = document.getElementById('form-token').value;
+        const nid = document.getElementById('form-nid').value;
+        localStorage.setItem('uid', uid);
+        localStorage.setItem('token', token);
+        localStorage.setItem('nid', nid);
+
+        const url = `https://project-gc.com/api/UserLocation/Update/?protocol=1&uid=${uid}&latitude=${coords[0]}&longitude=${coords[1]}&acc=${accuracy}&ts=${timestamp}&token=${token}&nid=${nid}&enable=1`;
+        document.getElementById('target-frame').src = url;
+
+        return false;
+    }
+
+    document.getElementById('form-uid').value = localStorage.getItem('uid') || '';
+    document.getElementById('form-token').value = localStorage.getItem('token') || '';
+    document.getElementById('form-nid').value = localStorage.getItem('nid') || '';
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        minZoom: 2,
+        maxZoom: 19,
+    }).addTo(map);
+
+    marker = L.marker(coords).addTo(map);
+    displayCoords();
+
+    map.on('click', (e) => {
+        coords[0] = e.latlng.lat.toFixed(5);
+        coords[1] = e.latlng.lng.toFixed(5);
+        displayCoords();
+    });
+</script>
+</body>
+</html>
